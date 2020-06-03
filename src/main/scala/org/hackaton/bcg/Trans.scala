@@ -28,7 +28,10 @@ object Trans extends TransUtils {
 
   def main(args: Array[String]): Unit = {
     addCodeToScraperMetadata()
+    translate()
+  }
 
+  def translate():Unit={
     val documents: Seq[ScraperMetadata] = readMetadata().filterNot(_.language.equals("en")).filter(x => x.isPdf || !x.isTranslated)
     implicit lazy val translateService: Translate = {
       val sac: ServiceAccountCredentials =
@@ -58,5 +61,4 @@ object Trans extends TransUtils {
       //}
     })
   }
-
 }
