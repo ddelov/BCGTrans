@@ -1,6 +1,6 @@
 package org.hackaton.bcg
 
-import java.io.{FileWriter, PrintWriter}
+import java.io.{File, FileWriter, PrintWriter}
 import java.net.URI
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets.UTF_8
@@ -9,19 +9,22 @@ import java.nio.file.{Files, Paths}
 import com.google.cloud.translate.{Translate, Translation}
 
 import scala.io.{Codec, Source}
-import scala.util.Using
+import scala.util.{Try, Using}
 
 /**
  * Created by Delcho Delov on 24.05.20 г.
  */
 trait TransUtils {
 
-  private val metadataFile = "resources/scraper-metadata.csv"
-  private val countriesFile = "resources/BCG_Google_Queries_non_english.csv"
-
+  private val sep = File.separator
+  private val metadataFile = s"resources${sep}scraper-metadata.csv"
+  private val metadataExtFile = s"resources${sep}scraper-metadata-extended.csv"
+  private val countriesFile = s"resources${sep}BCG_Google_Queries_non_english.csv"
   implicit val codec: Codec = Codec("UTF-8")
+
   codec.onMalformedInput(CodingErrorAction.REPLACE)
   codec.onUnmappableCharacter(CodingErrorAction.REPLACE)
+  private lazy val country2code: Map[String, String] = loadCountries()
 
   private type ContentLang = (String, String)
 
@@ -29,7 +32,7 @@ trait TransUtils {
     def loadDocument: ContentLang = {
       val countryCode = country
       val localName = if (isPdf) s"$filename.pdf.txt" else s"$filename.txt"
-      val path = Paths.get(s"resources/$countryCode/$localName")
+      val path = Paths.get(s"resources$sep$countryCode$sep$localName")
       val text: String = new String(Files.readAllBytes(path), UTF_8)
       (text, language)
     }
@@ -40,20 +43,42 @@ trait TransUtils {
       }
   }
 
-  private def loadCountries(): Map[String, String] = {
-    var country2code: Map[String, String] = Map()
-    val lines: Iterator[String] = Using.resource(Source.fromFile(countriesFile)){ f=>f.getLines.drop(1)}
-    for (line <- lines) {
-      val fields = line.split(',')
-      if (fields.length > 1) {
-        country2code += (fields(1).trim -> fields(0).trim)
-      }
+  def addCodeToScraperMetadata(): Try[Unit] = {
+    Using.Manager { use =>
+      val in = use(Source.fromFile(metadataFile))
+      val out = use(new PrintWriter(new FileWriter(metadataExtFile)))
+      var headSet = false
+      in.getLines().foreach(line => {
+        if (!headSet) {
+          out.println(s"alpha_2_code,$line")
+          headSet = true
+        } else {
+          val inFields = line.split(',')
+          if (inFields.length > 1) {
+            val country = inFields(0).trim
+            val code = country2code.getOrElse(country, "N/A")
+            out.println((code +: inFields).mkString(","))
+          }
+        }
+      })
     }
-    country2code
+  }
+
+
+  private def loadCountries(): Map[String, String] = {
+    var res: Map[String, String] = Map()
+    Using.resource(Source.fromFile(countriesFile)) { source =>
+      for (line <- source.getLines()) {
+        val fields = line.split(',')
+        if (fields.length > 1) {
+          res += (fields(1).trim -> fields(0).trim)
+        }
+      }
+      res
+    }
   }
 
   def readMetadata(): Seq[ScraperMetadata] = {
-    val country2code = loadCountries()
 
     def transform(line: String): Option[ScraperMetadata] = {
       val fields = line.split(',')
@@ -66,10 +91,11 @@ trait TransUtils {
         val language = fields(4)
         val isPdf: Boolean = fields(5).toBoolean
         val isTranslated: Boolean = fields(6).toBoolean
-        val length: Long = 0L
+        val length: Long = -1L
         Option(ScraperMetadata(countryCode, url, filename, query, language, isPdf, isTranslated, length))
       } else None
     }
+
 
     val source = Source.fromFile(metadataFile)
     val lines = source.getLines()
