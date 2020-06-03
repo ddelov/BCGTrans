@@ -13,7 +13,7 @@ import scala.util.Using
  */
 object Trans extends TransUtils {
 
-  def getChunks(text: String, upTo: Int = 3000): Seq[String] = {
+  private def getChunks(text: String, upTo: Int = 3000): Seq[String] = {
     @tailrec
     def cc(str: String, ind: Int, chunks: Seq[String]): Seq[String] = {
       if (str.trim.isEmpty || ind == 0) chunks
@@ -22,7 +22,6 @@ object Trans extends TransUtils {
         cc(str.drop(len1), ind, chunks :+ part1)
       }
     }
-
     cc(text, upTo, Seq())
   }
 
